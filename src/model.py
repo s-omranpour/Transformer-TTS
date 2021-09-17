@@ -83,8 +83,10 @@ class TransformerTTS(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), lr=self.config['lr'])
-        sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.config['max_epochs'], eta_min=0.)
-        return [opt], [sch]
+        if 'max_epochs' in self.config:
+            sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.config['max_epochs'], eta_min=0.)
+            return [opt], [sch]
+        return opt
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
