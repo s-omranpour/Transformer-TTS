@@ -46,6 +46,7 @@ class TTSDataset(Dataset):
             mel = np.load(samp['mel_path'])
         else:
             mel = self.audio_processor(samp['path'])
+        mel = np.pad(mel, ((0, 0), (1, 0)))
         phones = self.text_processor(samp['sentence'], to_phones=self.use_phonemes, to_indices=True)
         return phones, mel.T
 

@@ -74,14 +74,14 @@ class TransformerTTS(pl.LightningModule):
     def forward(self, characters, mels=None, character_lengths=None, mel_lengths=None):
         trg_length_mask = self._generate_length_mask(mel_lengths)
         memory_length_mask = self._generate_length_mask(character_lengths)
-        att_mask = self._generate_causal_att_mask(mels.shape[1])
+        att_mask = None if mels is None else self._generate_causal_att_mask(mels.shape[1]).to(mels.device)
         memory = self.encoder(characters, memory_length_mask)
         return self.decoder(mels, memory, att_mask, trg_length_mask, memory_length_mask)
 
     def _generate_length_mask(self, lengths=None):
         mask = None
         if lengths is not None:
-            mask = torch.ones(len(lengths), max(lengths)).bool()
+            mask = torch.ones(len(lengths), max(lengths)).bool().to(lengths.device)
             for i,l in enumerate(lengths):
                 mask[i, :l] = False
         return mask
@@ -92,6 +92,8 @@ class TransformerTTS(pl.LightningModule):
     def step(self, batch, batch_idx, mode='train'):
         characters, character_lengths, mels, mel_lengths = batch
         post_out, mel_out, stop_out = self.forward(characters, mels, character_lengths, mel_lengths)
+        self.log('encoder alpha', self.encoder.alpha)
+        self.log('decoder alpha', self.decoder.alpha)
         
         l1_mel_loss = self.l1(mel_out, mels)   
         l2_mel_loss = self.l2(mel_out, mels)   
@@ -130,7 +132,7 @@ class TransformerTTS(pl.LightningModule):
     def synthesize(self, prompt, max_len=500):
         self.eval()   
         prompt = self.text_processor(prompt, to_phones=False, to_indices=True)
-        prompt = torch.tensor(prompt + [self.text_processor.pad_id]*(5 - (len(prompt) % 5))).unsqueeze(0).long()
+        prompt = torch.tensor(prompt).unsqueeze(0).long()
 
         mels = torch.zeros([1,1, 80])
         pbar = tqdm(range(max_len))
@@ -138,4 +140,4 @@ class TransformerTTS(pl.LightningModule):
             for i in pbar:
                 post_out, mel_out, stopout = self.forward(prompt, mels)
                 mels = torch.cat([mels, mel_out[:,-1:,:]], dim=1)
-        return mels[0].T
+        return mels[0], post_out[0]

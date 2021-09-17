@@ -34,8 +34,10 @@ class AudioProcessor:
         spec = self.denormalize(spec) + self.ref_level_db
         return librosa.griffinlim(spec, n_iter=50, hop_length=self.hop_length, win_length=self.n_fft, window=self.window)
 
-    def mel_to_audio(self, mel):
-        return librosa.feature.inverse.mel_to_audio(mel, sr=self.sr, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window, n_iter=32)
+    def mel_to_audio(self, mel, n_iter=50):
+        mel = self.denormalize(mel)
+        mel = librosa.db_to_power(mel)
+        return librosa.feature.inverse.mel_to_audio(mel, sr=self.sr, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window, n_iter=n_iter)
     
     def __call__(self, file):
         x, _ = librosa.load(file, sr=self.sr)
