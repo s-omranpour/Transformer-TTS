@@ -16,7 +16,7 @@ class Encoder(nn.Module):
         
         enc_layer = nn.TransformerEncoderLayer(
             d_hidden, n_head, 
-            dim_feedforward=d_inner, dropout=0.1, activation='relu', batch_first=True
+            dim_feedforward=d_inner, dropout=0.1, activation='gelu', batch_first=True
         )
         self.enc = nn.TransformerEncoder(enc_layer, n_encoder_layers)
 
@@ -37,11 +37,11 @@ class Decoder(nn.Module):
         self.prenet = DecoderPrenet(n_mel, d_hidden*2, d_hidden, dropout)
         self.proj = nn.Linear(d_hidden, d_hidden)
 
-        dec_layer = nn.TransformerDecoderLayer(d_hidden, n_head, dim_feedforward=d_inner, dropout=0.1, activation='relu', batch_first=True)
+        dec_layer = nn.TransformerDecoderLayer(d_hidden, n_head, dim_feedforward=d_inner, dropout=0.1, activation='gelu', batch_first=True)
         self.dec = nn.TransformerDecoder(dec_layer, n_decoder_layers)
 
         self.mel_linear = nn.Linear(d_hidden, n_mel * outputs_per_step)
-        self.stop_linear = nn.Linear(d_hidden, 1)
+        self.stop_linear = nn.Linear(d_hidden, 2)
 
         self.postnet = DecoderPostNet(n_mel, d_hidden, kernel, n_postnet_layers, dropout)
 
@@ -66,8 +66,9 @@ class TransformerTTS(pl.LightningModule):
         self.config = config
         self.audio_processor = audio_processor
         self.text_processor = text_processor
-        self.l1 = nn.L1Loss()
-        self.l2 = nn.MSELoss()
+        self.l1 = nn.L1Loss(reduction='none')
+        self.l2 = nn.MSELoss(reduction='none')
+        self.ce = nn.CrossEntropyLoss(reduction='none')
 
         self.encoder = Encoder(**config['encoder'])
         self.decoder = Decoder(**config['decoder'])
@@ -104,16 +105,21 @@ class TransformerTTS(pl.LightningModule):
         self.log('encoder alpha', self.encoder.alpha)
         self.log('decoder alpha', self.decoder.alpha)
         
-        l1_mel_loss = self.l1(mel_out, mels)   
-        l2_mel_loss = self.l2(mel_out, mels)   
-        l1_post_loss = self.l1(post_out, mels)
-        l2_post_loss = self.l2(post_out, mels)
+        mask = 1-self._generate_length_mask(mel_lengths).to(mel_lengths.device).float()
+        mask_2d = mask.unsqueeze(2).repeat(1,1,80)
+        l1_mel_loss = (self.l1(mel_out, mels) * mask_2d).mean()
+        l2_mel_loss = (self.l2(mel_out, mels) * mask_2d).mean()
+        l1_post_loss = (self.l1(post_out, mels) * mask_2d).mean()
+        l2_post_loss = (self.l2(post_out, mels) * mask_2d).mean()
+        stop_loss = (self.ce(stop_out.transpose(1,2), nn.functional.pad(mask, (0,1,0,0))[:,1:].long()) * mask).mean()
 
-        loss = l1_mel_loss + l1_post_loss + l2_mel_loss + l2_post_loss
+        loss = l1_mel_loss + l1_post_loss + l2_mel_loss + l2_post_loss + stop_loss
+
         self.log(mode + '_l1_mel', l1_mel_loss.item())
         self.log(mode + '_l1_post', l1_post_loss.item())
         self.log(mode + '_l2_mel', l2_mel_loss.item())
         self.log(mode + '_l2_post', l2_post_loss.item())
+        self.log(mode + '_stop_ce', stop_loss.item())
         self.log(mode + '_loss', loss.item())
         # if mode =='val':
         #     fig_spec = self.make_figure(linear_outputs[0])
@@ -144,9 +150,11 @@ class TransformerTTS(pl.LightningModule):
         prompt = torch.tensor(prompt).unsqueeze(0).long()
 
         mels = torch.zeros([1,1, 80])
-        pbar = tqdm(range(max_len))
         with torch.no_grad():
-            for i in pbar:
+            for i in tqdm(range(max_len)):
                 post_out, mel_out, stopout = self.forward(prompt, mels)
                 mels = torch.cat([mels, mel_out[:,-1:,:]], dim=1)
+                if torch.argmax(stopout[:, -1]) == 0:
+                    break
+                
         return mels[0], post_out[0]
