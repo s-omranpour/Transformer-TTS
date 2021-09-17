@@ -72,7 +72,7 @@ class TransformerTTS(pl.LightningModule):
         self.audio_processor = audio_processor
         self.text_processor = text_processor
         self.l1 = nn.L1Loss(reduction='none')
-#         self.l2 = nn.MSELoss(reduction='none')
+        self.l2 = nn.MSELoss(reduction='none')
 #         self.ssim = SSIM(data_range=1, size_average=True, channel=1, nonnegative_ssim=True)
 #         self.ms_ssim = MS_SSIM(data_range=1, size_average=True, channel=1)
         self.ce = nn.CrossEntropyLoss(reduction='none', weight=torch.Tensor([0.8, 0.2]))
@@ -121,20 +121,20 @@ class TransformerTTS(pl.LightningModule):
         
         l1_mel_loss = (self.l1(mel_out, mels[:,1:]) * mask_2d).mean()
         l1_post_loss = (self.l1(post_out, mels[:, 1:]) * mask_2d).mean()
-#         l2_post_loss = (self.l2(post_out, mels) * mask_2d).mean()
-#         l2_mel_loss = (self.l2(mel_out, mels) * mask_2d).mean()
+        l2_post_loss = (self.l2(post_out, mels[:, 1:]) * mask_2d).mean()
+        l2_mel_loss = (self.l2(mel_out, mels[:, 1:]) * mask_2d).mean()
 #         ssim_mel_loss = self.ssim(mel_out.unsqueeze(1), mels.unsqueeze(1))
 #         ssim_post_loss = self.ssim(post_out.unsqueeze(1), mels.unsqueeze(1))
         stop_loss = (self.ce(stop_out.transpose(1,2), nn.functional.pad(mask, (0,1,0,0))[:,1:].long()) * mask).mean()
 
-        loss = l1_mel_loss + l1_post_loss + stop_loss #+ ssim_mel_loss + ssim_post_loss + l2_post_loss + l2_mel_loss
+        loss = l1_mel_loss + l1_post_loss + stop_loss + l2_post_loss + l2_mel_loss #+ ssim_mel_loss + ssim_post_loss
 
         self.log(mode + '_l1_mel', l1_mel_loss.item())
         self.log(mode + '_l1_post', l1_post_loss.item())
 #         self.log(mode + '_ssim_mel', ssim_mel_loss.item())
 #         self.log(mode + '_ssim_post', ssim_post_loss.item())
-#         self.log(mode + '_l2_mel', l2_mel_loss.item())
-#         self.log(mode + '_l2_post', l2_post_loss.item())
+        self.log(mode + '_l2_mel', l2_mel_loss.item())
+        self.log(mode + '_l2_post', l2_post_loss.item())
         self.log(mode + '_stop_ce', stop_loss.item())
         self.log(mode + '_loss', loss.item())
         # if mode =='val':
