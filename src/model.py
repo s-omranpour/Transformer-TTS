@@ -109,22 +109,23 @@ class TransformerTTS(pl.LightningModule):
 
     def step(self, batch, batch_idx, mode='train'):
         characters, character_lengths, mels, mel_lengths = batch
-        mel_out, post_out, stop_out = self.forward(characters, mels, character_lengths, mel_lengths)
+        mel_out, post_out, stop_out = self.forward(characters, mels[:,:-1], character_lengths, mel_lengths-1)
+        
         self.log('encoder alpha', self.encoder.alpha)
         self.log('decoder alpha', self.decoder.alpha)
         
-        mask = 1-self._generate_length_mask(mel_lengths).to(mel_lengths.device).float()
+        mask = 1-self._generate_length_mask(mel_lengths-1).to(mel_lengths.device).float()
         mask_2d = mask.unsqueeze(2).repeat(1,1,80)
         
-        l1_mel_loss = (self.l1(mel_out, mels) * mask_2d).mean()
-        l1_post_loss = (self.l1(post_out, mels) * mask_2d).mean()
+        l1_mel_loss = (self.l1(mel_out, mels[:,1:]) * mask_2d).mean()
+        l1_post_loss = (self.l1(post_out, mels[:, 1:]) * mask_2d).mean()
 #         l2_post_loss = (self.l2(post_out, mels) * mask_2d).mean()
 #         l2_mel_loss = (self.l2(mel_out, mels) * mask_2d).mean()
 #         ssim_mel_loss = self.ssim(mel_out.unsqueeze(1), mels.unsqueeze(1))
 #         ssim_post_loss = self.ssim(post_out.unsqueeze(1), mels.unsqueeze(1))
         stop_loss = (self.ce(stop_out.transpose(1,2), nn.functional.pad(mask, (0,1,0,0))[:,1:].long()) * mask).mean()
 
-        loss = l1_mel_loss + l1_post_loss #+ ssim_mel_loss + ssim_post_loss + stop_loss + l2_post_loss + l2_mel_loss
+        loss = l1_mel_loss + l1_post_loss + stop_loss #+ ssim_mel_loss + ssim_post_loss + l2_post_loss + l2_mel_loss
 
         self.log(mode + '_l1_mel', l1_mel_loss.item())
         self.log(mode + '_l1_post', l1_post_loss.item())
