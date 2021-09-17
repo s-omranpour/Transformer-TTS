@@ -68,7 +68,7 @@ class TransformerTTS(pl.LightningModule):
         self.text_processor = text_processor
         self.l1 = nn.L1Loss(reduction='none')
         self.l2 = nn.MSELoss(reduction='none')
-        self.ce = nn.CrossEntropyLoss(reduction='none')
+        self.ce = nn.CrossEntropyLoss(reduction='none', weight=torch.Tensor([0.8, 0.2]))
 
         self.encoder = Encoder(**config['encoder'])
         self.decoder = Decoder(**config['decoder'])
