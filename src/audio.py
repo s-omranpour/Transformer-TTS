@@ -32,6 +32,7 @@ class AudioProcessor:
 
     def spec_to_audio(self, spec):
         spec = self.denormalize(spec) + self.ref_level_db
+        spec = librosa.db_to_amplitude(spec)
         return librosa.griffinlim(spec, n_iter=50, hop_length=self.hop_length, win_length=self.n_fft, window=self.window)
 
     def mel_to_audio(self, mel, n_iter=50):

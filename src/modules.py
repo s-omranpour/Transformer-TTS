@@ -27,7 +27,7 @@ class EncoderPrenet(nn.Module):
     """
     def __init__(self, n_vocab, d_emb, d_hidden, n_conv_layers=3, kernel=5, dropout=0.2):
         super(EncoderPrenet, self).__init__()
-        self.emb = nn.Embedding(n_vocab, d_emb, padding_idx=0)
+        self.emb = nn.Embedding(n_vocab, d_emb)
         
         layers = []
         in_c = [d_emb] + [d_hidden]*(n_conv_layers - 1)
@@ -76,11 +76,11 @@ class Slice(nn.Module):
 
 
 class DecoderPostNet(nn.Module):
-    def __init__(self, n_mel, d_hidden, outputs_per_step, kernel=5, n_conv_layers=3, dropout=0.1):
+    def __init__(self, n_mel, d_hidden, kernel=5, n_conv_layers=3, dropout=0.1):
         super().__init__()
 
         layers = []
-        in_c = [n_mel * outputs_per_step] + [d_hidden]*(n_conv_layers-2)
+        in_c = [n_mel] + [d_hidden]*(n_conv_layers-2)
         out_c = [d_hidden]*(n_conv_layers-1)
         for i,o in zip(in_c, out_c):
             layers += [
@@ -98,7 +98,7 @@ class DecoderPostNet(nn.Module):
         layers += [
             nn.Conv1d(
                 in_channels=d_hidden,
-                out_channels=n_mel * outputs_per_step,
+                out_channels=n_mel,
                 kernel_size=kernel,
                 padding=kernel-1
             ), 

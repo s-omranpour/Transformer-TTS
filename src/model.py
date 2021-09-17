@@ -10,7 +10,9 @@ class Encoder(nn.Module):
 
         self.alpha = nn.Parameter(torch.ones(1))
         self.pos_emb = RelativePositionalEncoding(d_hidden, max_len=20000)
-        self.prenet = EncoderPrenet(n_vocab, d_emb, d_hidden, n_prenet_layers, kernel, dropout)
+#         self.prenet = EncoderPrenet(n_vocab, d_emb, d_hidden, n_prenet_layers, kernel, dropout)
+        self.prenet = nn.Embedding(n_vocab, d_hidden)
+        self.dropout = nn.Dropout(dropout)
         
         enc_layer = nn.TransformerEncoderLayer(
             d_hidden, n_head, 
@@ -19,7 +21,7 @@ class Encoder(nn.Module):
         self.enc = nn.TransformerEncoder(enc_layer, n_encoder_layers)
 
     def forward(self, x, length_mask=None):
-        x = self.prenet(x) + self.pos_emb(x) * self.alpha
+        x = self.dropout(self.prenet(x) + self.pos_emb(x) * self.alpha)
         x = self.enc(x, src_key_padding_mask=length_mask)
         return x
 
@@ -27,6 +29,8 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, n_mel, d_hidden, n_head, d_inner, outputs_per_step, n_decoder_layers=3, n_postnet_layers=3, kernel=5, dropout=0.2):
         super().__init__()
+        self.n_mel = n_mel
+        self.outputs_per_step = outputs_per_step
 
         self.pos_emb = RelativePositionalEncoding(d_hidden, max_len=20000)
         self.alpha = nn.Parameter(torch.ones(1))
@@ -39,13 +43,18 @@ class Decoder(nn.Module):
         self.mel_linear = nn.Linear(d_hidden, n_mel * outputs_per_step)
         self.stop_linear = nn.Linear(d_hidden, 1)
 
-        self.postnet = DecoderPostNet(n_mel, d_hidden, outputs_per_step, kernel, n_postnet_layers, dropout)
+        self.postnet = DecoderPostNet(n_mel, d_hidden, kernel, n_postnet_layers, dropout)
 
 
     def forward(self, x, memory, att_mask=None, trg_length_mask=None, memory_length_mask=None):
-        x = self.prenet(x) + self.pos_emb(x) * self.alpha
-        x = self.dec(x, memory, tgt_mask=att_mask, tgt_key_padding_mask=trg_length_mask, memory_key_padding_mask=memory_length_mask)
-        mel_out = self.mel_linear(x)
+        
+        x = self.proj(self.prenet(x) + self.pos_emb(x) * self.alpha)
+        x = self.dec(x, memory, 
+                     tgt_mask=att_mask, tgt_key_padding_mask=trg_length_mask, memory_key_padding_mask=memory_length_mask)
+        
+        n_batch = x.shape[0]
+        n_time = x.shape[1]
+        mel_out = self.mel_linear(x).view(n_batch, n_time * self.outputs_per_step, self.n_mel)
         post_out = (self.postnet(mel_out.transpose(1, 2)) + mel_out.transpose(1, 2)).transpose(1, 2)
         stop_out = self.stop_linear(x)
         return post_out, mel_out, stop_out
