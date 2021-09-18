@@ -10,17 +10,18 @@ from .audio import AudioProcessor
 from .text import TextProcessor
 
 class TTSDataset(Dataset):
-    def __init__(self, json_path, audio_processor, text_processor, div_steps=5, use_phonemes=False, precompute_mels=False, mel_path=None):
+    def __init__(self, json_path, audio_processor, text_processor, div_steps=5, use_phonemes=False, use_precomputed_mels=False, mel_path=None):
         super().__init__()
         self.json_path = json_path
         self.div_steps = div_steps
         self.use_phonemes = use_phonemes
+        self.use_precomputed_mels = use_precomputed_mels
 
         self.meta = pd.read_json(json_path, lines=True, orient='records')
         self.meta = self.meta.sort_values('duration', ascending=False).reset_index(drop=True)
         self.audio_processor = audio_processor
         self.text_processor = text_processor
-        if precompute_mels and 'mel_path' not in self.meta.columns:
+        if use_precomputed_mels and 'mel_path' not in self.meta.columns:
             assert mel_path is not None, "Please specify mel_path."
             self.mel_path = mel_path
             self.process_audios()
@@ -42,7 +43,7 @@ class TTSDataset(Dataset):
 
     def __getitem__(self, idx):
         samp = self.meta.loc[idx]
-        if 'mel_path' in self.meta.columns:
+        if self.use_precomputed_mels and 'mel_path' in self.meta.columns:
             mel = np.load(samp['mel_path'])
         else:
             mel = self.audio_processor(samp['path'])

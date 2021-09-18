@@ -11,10 +11,10 @@ class Encoder(nn.Module):
     def __init__(self, n_vocab, d_emb, d_hidden, n_head, d_inner, n_encoder_layers=3, n_prenet_layers=3, kernel=5, dropout=0.2):
         super().__init__()
 
-        self.alpha = nn.Parameter(torch.ones(1))
+#         self.alpha = nn.Parameter(torch.ones(1))
         self.pos_emb = RelativePositionalEncoding(d_hidden, max_len=20000)
-        self.prenet = EncoderPrenet(n_vocab, d_emb, d_hidden, n_prenet_layers, kernel, dropout)
-#         self.prenet = nn.Embedding(n_vocab, d_hidden)
+#         self.prenet = EncoderPrenet(n_vocab, d_emb, d_hidden, n_prenet_layers, kernel, dropout)
+        self.prenet = nn.Embedding(n_vocab, d_hidden)
         self.dropout = nn.Dropout(dropout)
         
         enc_layer = nn.TransformerEncoderLayer(
@@ -24,7 +24,7 @@ class Encoder(nn.Module):
         self.enc = nn.TransformerEncoder(enc_layer, n_encoder_layers)
 
     def forward(self, x, length_mask=None):
-        x = self.dropout(self.prenet(x) + self.pos_emb(x) * self.alpha)
+        x = self.dropout(self.prenet(x) + self.pos_emb(x)) # * self.alpha
         x = self.enc(x, src_key_padding_mask=length_mask)
         return x
 
@@ -35,8 +35,8 @@ class Decoder(nn.Module):
         self.n_mel = n_mel
         self.outputs_per_step = outputs_per_step
 
-        self.pos_emb = RelativePositionalEncoding(d_hidden, max_len=20000)
-        self.alpha = nn.Parameter(torch.ones(1))
+        self.pos_emb = RelativePositionalEncoding(d_hidden, max_len=10000)
+#         self.alpha = nn.Parameter(torch.ones(1))
         self.prenet = DecoderPrenet(n_mel, d_hidden*2, d_hidden, dropout)
         self.proj = nn.Linear(d_hidden, d_hidden)
 
@@ -52,7 +52,7 @@ class Decoder(nn.Module):
 
     def forward(self, x, memory, att_mask=None, trg_length_mask=None, memory_length_mask=None):
         
-        x = self.proj(self.prenet(x) + self.pos_emb(x) * self.alpha)
+        x = self.proj(self.prenet(x) + self.pos_emb(x)) # * self.alpha
         x = self.dec(x, memory, 
                      tgt_mask=att_mask, tgt_key_padding_mask=trg_length_mask, memory_key_padding_mask=memory_length_mask)
         
@@ -72,7 +72,7 @@ class TransformerTTS(pl.LightningModule):
         self.audio_processor = audio_processor
         self.text_processor = text_processor
         self.l1 = nn.L1Loss(reduction='none')
-        self.l2 = nn.MSELoss(reduction='none')
+#         self.l2 = nn.MSELoss(reduction='none')
 #         self.ssim = SSIM(data_range=1, size_average=True, channel=1, nonnegative_ssim=True)
 #         self.ms_ssim = MS_SSIM(data_range=1, size_average=True, channel=1)
         self.ce = nn.CrossEntropyLoss(reduction='none', weight=torch.Tensor([0.8, 0.2]))
@@ -113,28 +113,28 @@ class TransformerTTS(pl.LightningModule):
         characters, character_lengths, mels, mel_lengths = batch
         mel_out, post_out, stop_out = self.forward(characters, mels[:,:-1], character_lengths, mel_lengths-1)
         
-        self.log('encoder alpha', self.encoder.alpha)
-        self.log('decoder alpha', self.decoder.alpha)
+#         self.log('encoder alpha', self.encoder.alpha)
+#         self.log('decoder alpha', self.decoder.alpha)
         
         mask = 1-self._generate_length_mask(mel_lengths-1).to(mel_lengths.device).float()
         mask_2d = mask.unsqueeze(2).repeat(1,1,80)
         
         l1_mel_loss = (self.l1(mel_out, mels[:,1:]) * mask_2d).mean()
         l1_post_loss = (self.l1(post_out, mels[:, 1:]) * mask_2d).mean()
-        l2_post_loss = (self.l2(post_out, mels[:, 1:]) * mask_2d).mean()
-        l2_mel_loss = (self.l2(mel_out, mels[:, 1:]) * mask_2d).mean()
+#         l2_post_loss = (self.l2(post_out, mels[:, 1:]) * mask_2d).mean()
+#         l2_mel_loss = (self.l2(mel_out, mels[:, 1:]) * mask_2d).mean()
 #         ssim_mel_loss = self.ssim(mel_out.unsqueeze(1), mels.unsqueeze(1))
 #         ssim_post_loss = self.ssim(post_out.unsqueeze(1), mels.unsqueeze(1))
         stop_loss = (self.ce(stop_out.transpose(1,2), nn.functional.pad(mask, (0,1,0,0))[:,1:].long()) * mask).mean()
 
-        loss = l1_mel_loss + l1_post_loss + stop_loss + l2_post_loss + l2_mel_loss #+ ssim_mel_loss + ssim_post_loss
+        loss = l1_mel_loss + l1_post_loss + stop_loss #+ l2_post_loss + l2_mel_loss #+ ssim_mel_loss + ssim_post_loss
 
         self.log(mode + '_l1_mel', l1_mel_loss.item())
         self.log(mode + '_l1_post', l1_post_loss.item())
 #         self.log(mode + '_ssim_mel', ssim_mel_loss.item())
 #         self.log(mode + '_ssim_post', ssim_post_loss.item())
-        self.log(mode + '_l2_mel', l2_mel_loss.item())
-        self.log(mode + '_l2_post', l2_post_loss.item())
+#         self.log(mode + '_l2_mel', l2_mel_loss.item())
+#         self.log(mode + '_l2_post', l2_post_loss.item())
         self.log(mode + '_stop_ce', stop_loss.item())
         self.log(mode + '_loss', loss.item())
         # if mode =='val':
