@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from pandas._config import config
@@ -23,6 +24,7 @@ class TTSDataset(Dataset):
         self.text_processor = text_processor
         if use_precomputed_mels and 'mel_path' not in self.meta.columns:
             assert mel_path is not None, "Please specify mel_path."
+            os.makedirs(mel_path, exist_ok=True)
             self.mel_path = mel_path
             self.process_audios()
 
